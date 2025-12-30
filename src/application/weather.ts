@@ -141,6 +141,15 @@ const calculateSolarImpact = (
   };
 };
 
+// Simple in-memory cache
+interface CacheEntry {
+  data: WeatherData;
+  timestamp: number;
+}
+
+const weatherCache = new Map<string, CacheEntry>();
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+
 export const getWeatherData = async (
   req: Request,
   res: Response,
@@ -150,6 +159,16 @@ export const getWeatherData = async (
     // Default to Colombo, Sri Lanka coordinates (can be made dynamic via query params)
     const latitude = parseFloat(req.query.lat as string) || 6.9271;
     const longitude = parseFloat(req.query.lon as string) || 79.8612;
+
+    // Create cache key based on coordinates
+    const cacheKey = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+    
+    // Check cache
+    const cached = weatherCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log("Returning cached weather data");
+      return res.status(200).json(cached.data);
+    }
 
     const params = new URLSearchParams({
       latitude: latitude.toString(),
@@ -172,6 +191,11 @@ export const getWeatherData = async (
     const response = await fetch(`${OPEN_METEO_BASE_URL}?${params}`);
 
     if (!response.ok) {
+      // If rate limited and we have old cache, return it
+      if (response.status === 429 && cached) {
+        console.log("Rate limited - returning stale cache");
+        return res.status(200).json(cached.data);
+      }
       throw new Error(`Weather API error: ${response.statusText}`);
     }
 
@@ -221,6 +245,12 @@ export const getWeatherData = async (
       solarImpact,
       hourlyForecast,
     };
+
+    // Store in cache
+    weatherCache.set(cacheKey, {
+      data: weatherData,
+      timestamp: Date.now(),
+    });
 
     res.status(200).json(weatherData);
   } catch (error) {
