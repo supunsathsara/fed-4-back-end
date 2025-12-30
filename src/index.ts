@@ -13,7 +13,8 @@ import { clerkMiddleware } from "@clerk/express";
 import usersRouter from "./api/users";
 
 const server = express();
-server.use(cors({ origin: "http://localhost:5173" }));
+// Allow CORS from any origin
+server.use(cors());
 
 server.use(loggerMiddleware);
 
