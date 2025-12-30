@@ -38,8 +38,9 @@ export const syncMiddleware = async (
         }
 
         // Fetch latest records from data API
+        const dataAPIUrl = process.env.DATA_API_URL || "http://localhost:8001";
         const dataAPIResponse = await fetch(
-            `http://localhost:8001/api/energy-generation-records/solar-unit/${solarUnit.serialNumber}`
+            `${dataAPIUrl}/api/energy-generation-records/solar-unit/${solarUnit.serialNumber}`
         );
         if (!dataAPIResponse.ok) {
             throw new Error("Failed to fetch energy generation records from data API");
