@@ -4,6 +4,7 @@ import energyGenerationRecordRouter from "./api/energy-generation-record";
 import { globalErrorHandler } from "./api/middlewares/global-error-handling-middleware";
 import { loggerMiddleware } from "./api/middlewares/logger-middleware";
 import solarUnitRouter from "./api/solar-unit";
+import weatherRouter from "./api/weather";
 import { connectDB } from "./infrastructure/db";
 import { initializeScheduler } from "./infrastructure/scheduler";
 import cors from "cors";
@@ -25,6 +26,7 @@ server.use(express.json());
 server.use("/api/solar-units", solarUnitRouter);
 server.use("/api/energy-generation-records", energyGenerationRecordRouter);
 server.use("/api/users", usersRouter);
+server.use("/api/weather", weatherRouter);
 
 server.use(globalErrorHandler);
 
