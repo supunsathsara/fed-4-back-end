@@ -13,19 +13,11 @@ export const authorizationMiddleware = async (
     if (!auth.userId) {
         throw new UnauthorizedError("Unauthorized");
     }
-
-    // Debug: Log session claims to see structure
     console.log("[Auth Debug] Session Claims:", JSON.stringify(auth.sessionClaims, null, 2));
+    // Access public_metadata from customized session token
+    const publicMetadata = (auth.sessionClaims as any)?.public_metadata as UserPublicMetadata | undefined;
 
-    // Try multiple possible locations for role
-    const publicMetadata = auth.sessionClaims?.metadata as UserPublicMetadata | undefined;
-    const publicMetadataAlt = (auth.sessionClaims as any)?.public_metadata as UserPublicMetadata | undefined;
-    
-    const role = publicMetadata?.role || publicMetadataAlt?.role;
-
-    console.log("[Auth Debug] Role found:", role);
-
-    if (role !== "admin") {
+    if (!publicMetadata || publicMetadata.role !== "admin") {
         throw new ForbiddenError("Forbidden");
     }
     next();
