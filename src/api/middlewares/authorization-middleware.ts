@@ -14,9 +14,18 @@ export const authorizationMiddleware = async (
         throw new UnauthorizedError("Unauthorized");
     }
 
-    const publicMetadata = auth.sessionClaims?.metadata as UserPublicMetadata;
+    // Debug: Log session claims to see structure
+    console.log("[Auth Debug] Session Claims:", JSON.stringify(auth.sessionClaims, null, 2));
 
-    if (publicMetadata.role !== "admin") {
+    // Try multiple possible locations for role
+    const publicMetadata = auth.sessionClaims?.metadata as UserPublicMetadata | undefined;
+    const publicMetadataAlt = (auth.sessionClaims as any)?.public_metadata as UserPublicMetadata | undefined;
+    
+    const role = publicMetadata?.role || publicMetadataAlt?.role;
+
+    console.log("[Auth Debug] Role found:", role);
+
+    if (role !== "admin") {
         throw new ForbiddenError("Forbidden");
     }
     next();
