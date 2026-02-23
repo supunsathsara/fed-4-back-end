@@ -1,6 +1,7 @@
 import express from "express";
 import { verifyWebhook } from "@clerk/express/webhooks";
 import { User } from "../infrastructure/entities/User";
+import { createAuditLog } from "../application/audit-log";
 
 const webhooksRouter = express.Router();
 
@@ -39,6 +40,21 @@ webhooksRouter.post(
           status: isAdmin ? "ACTIVE" : "PENDING",
           statusUpdatedAt: new Date(),
         });
+
+        const newUser = await User.findOne({ clerkUserId: id });
+        if (newUser) {
+          await createAuditLog({
+            action: "USER_CREATED",
+            targetType: "User",
+            targetId: newUser._id,
+            details: {
+              email: newUser.email,
+              firstName: newUser.firstName,
+              lastName: newUser.lastName,
+              initialStatus: isAdmin ? "ACTIVE" : "PENDING",
+            },
+          });
+        }
       }
 
       if (eventType === "user.updated") {

@@ -2,6 +2,7 @@ import { EnergyGenerationRecord } from "../infrastructure/entities/EnergyGenerat
 import { SolarUnit } from "../infrastructure/entities/SolarUnit";
 import { Anomaly, ANOMALY_TYPES, SEVERITY_LEVELS, RESOLUTION_STATUS } from "../infrastructure/entities/Anomaly";
 import mongoose from "mongoose";
+import { createAuditLog } from "./audit-log";
 
 /**
  * Anomaly Detection Application Service
@@ -613,6 +614,24 @@ export async function updateAnomalyStatus(
   }
 
   await anomaly.save();
+
+  const actionMap: Record<string, string> = {
+    acknowledge: "ANOMALY_ACKNOWLEDGED",
+    resolve: "ANOMALY_RESOLVED",
+    false_positive: "ANOMALY_FALSE_POSITIVE",
+  };
+  await createAuditLog({
+    action: actionMap[action],
+    performedBy: userId,
+    targetType: "Anomaly",
+    targetId: anomaly._id,
+    details: {
+      anomalyType: anomaly.anomalyType,
+      severity: anomaly.severity,
+      resolutionNotes: notes,
+    },
+  });
+
   return anomaly;
 }
 

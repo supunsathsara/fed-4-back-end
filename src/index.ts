@@ -17,6 +17,7 @@ import cors from "cors";
 import webhooksRouter from "./api/webhooks";
 import { clerkMiddleware } from "@clerk/express";
 import usersRouter from "./api/users";
+import auditLogRouter from "./api/audit-log";
 
 const server = express();
 // Allow CORS from any origin
@@ -45,6 +46,7 @@ server.use("/api/weather", weatherRouter);
 server.use("/api/anomalies", anomalyRouter);
 server.use("/api/invoices", invoiceRouter);
 server.use("/api/payments", paymentRouter);
+server.use("/api/audit-logs", auditLogRouter);
 
 server.use(globalErrorHandler);
 

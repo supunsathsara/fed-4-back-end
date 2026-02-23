@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from "express";
 import { NotFoundError, ValidationError } from "../domain/errors/errors";
 import { User } from "../infrastructure/entities/User";
 import { getAuth } from "@clerk/express";
+import { createAuditLog, resolvePerformerId } from "./audit-log";
 
 export const getAllSolarUnits = async (
   req: Request,
@@ -60,6 +61,21 @@ export const createSolarUnit = async (
     }
 
     const createdSolarUnit = await SolarUnit.create(newSolarUnit);
+
+    const performerId = await resolvePerformerId(req);
+    await createAuditLog({
+      action: "SOLAR_UNIT_CREATED",
+      performedBy: performerId,
+      targetType: "SolarUnit",
+      targetId: createdSolarUnit._id,
+      details: {
+        serialNumber: createdSolarUnit.serialNumber,
+        capacity: createdSolarUnit.capacity,
+        status: createdSolarUnit.status,
+        assignedTo: data.userId || null,
+      },
+    });
+
     res.status(201).json(createdSolarUnit);
   } catch (error) {
     next(error);
@@ -138,6 +154,15 @@ export const updateSolarUnit = async (
     userId,
   });
 
+  const performerId = await resolvePerformerId(req);
+  await createAuditLog({
+    action: "SOLAR_UNIT_UPDATED",
+    performedBy: performerId,
+    targetType: "SolarUnit",
+    targetId: solarUnit._id,
+    details: { serialNumber, capacity, status },
+  });
+
   res.status(200).json(updatedSolarUnit);
 };
 
@@ -155,6 +180,16 @@ export const deleteSolarUnit = async (
     }
 
     await SolarUnit.findByIdAndDelete(id);
+
+    const performerId = await resolvePerformerId(req);
+    await createAuditLog({
+      action: "SOLAR_UNIT_DELETED",
+      performedBy: performerId,
+      targetType: "SolarUnit",
+      targetId: solarUnit._id,
+      details: { serialNumber: solarUnit.serialNumber },
+    });
+
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -214,6 +249,19 @@ export const assignSolarUnit = async (
     user.statusUpdatedAt = new Date();
     await user.save();
 
+    const performerId = await resolvePerformerId(req);
+    await createAuditLog({
+      action: "SOLAR_UNIT_ASSIGNED",
+      performedBy: performerId,
+      targetType: "SolarUnit",
+      targetId: solarUnit._id,
+      details: {
+        serialNumber: solarUnit.serialNumber,
+        userId: user._id,
+        userEmail: user.email,
+      },
+    });
+
     res.status(200).json(updatedSolarUnit);
   } catch (error) {
     next(error);
@@ -243,11 +291,24 @@ export const unassignSolarUnit = async (
       }
     }
 
+    const previousUserId = solarUnit.userId;
     const updatedSolarUnit = await SolarUnit.findByIdAndUpdate(
       id,
       { $unset: { userId: 1 } },
       { new: true }
     );
+
+    const performerId = await resolvePerformerId(req);
+    await createAuditLog({
+      action: "SOLAR_UNIT_UNASSIGNED",
+      performedBy: performerId,
+      targetType: "SolarUnit",
+      targetId: solarUnit._id,
+      details: {
+        serialNumber: solarUnit.serialNumber,
+        previousUserId,
+      },
+    });
 
     res.status(200).json(updatedSolarUnit);
   } catch (error) {

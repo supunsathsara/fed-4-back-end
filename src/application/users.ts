@@ -3,6 +3,7 @@ import { User } from "../infrastructure/entities/User";
 import { SolarUnit } from "../infrastructure/entities/SolarUnit";
 import { NotFoundError, ValidationError, ForbiddenError } from "../domain/errors/errors";
 import { getAuth } from "@clerk/express";
+import { createAuditLog } from "./audit-log";
 
 export const getAllUsers = async (
     req: Request,
@@ -140,6 +141,14 @@ export const approveUser = async (
       user.statusUpdatedBy = adminUser?._id;
       await user.save();
 
+      await createAuditLog({
+        action: "USER_APPROVED",
+        performedBy: adminUser?._id,
+        targetType: "User",
+        targetId: user._id,
+        details: { userEmail: user.email, previousStatus: "PENDING" },
+      });
+
       res.status(200).json(user);
     } catch (error) {
       next(error);
@@ -172,6 +181,14 @@ export const rejectUser = async (
       user.statusUpdatedAt = new Date();
       user.statusUpdatedBy = adminUser?._id;
       await user.save();
+
+      await createAuditLog({
+        action: "USER_REJECTED",
+        performedBy: adminUser?._id,
+        targetType: "User",
+        targetId: user._id,
+        details: { userEmail: user.email, reason: user.rejectionReason },
+      });
 
       res.status(200).json(user);
     } catch (error) {
@@ -210,6 +227,14 @@ export const suspendUser = async (
       user.statusUpdatedBy = adminUser?._id;
       await user.save();
 
+      await createAuditLog({
+        action: "USER_SUSPENDED",
+        performedBy: adminUser?._id,
+        targetType: "User",
+        targetId: user._id,
+        details: { userEmail: user.email, reason: user.rejectionReason },
+      });
+
       res.status(200).json(user);
     } catch (error) {
       next(error);
@@ -239,11 +264,20 @@ export const reactivateUser = async (
       // Check if user has a solar unit to determine ACTIVE vs APPROVED
       const solarUnit = await SolarUnit.findOne({ userId: user._id });
 
+      const previousStatus = user.status;
       user.status = solarUnit ? "ACTIVE" : "APPROVED";
       user.rejectionReason = undefined;
       user.statusUpdatedAt = new Date();
       user.statusUpdatedBy = adminUser?._id;
       await user.save();
+
+      await createAuditLog({
+        action: "USER_REACTIVATED",
+        performedBy: adminUser?._id,
+        targetType: "User",
+        targetId: user._id,
+        details: { userEmail: user.email, previousStatus, newStatus: user.status },
+      });
 
       res.status(200).json(user);
     } catch (error) {
