@@ -27,11 +27,17 @@ webhooksRouter.post(
           console.log("User already exists");
           return;
         }
+
+        // Check if this is an admin user (set via Clerk metadata)
+        const isAdmin = evt.data.public_metadata?.role === "admin";
+
         await User.create({
           firstName: evt.data.first_name,
           lastName: evt.data.last_name,
           email: evt.data.email_addresses[0].email_address,
           clerkUserId: id,
+          status: isAdmin ? "ACTIVE" : "PENDING",
+          statusUpdatedAt: new Date(),
         });
       }
 

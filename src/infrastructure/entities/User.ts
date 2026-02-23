@@ -23,6 +23,23 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  status: {
+    type: String,
+    enum: ["PENDING", "APPROVED", "ACTIVE", "REJECTED", "SUSPENDED"],
+    default: "PENDING",
+  },
+  statusUpdatedAt: {
+    type: Date,
+  },
+  statusUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  rejectionReason: {
+    type: String,
+  },
+}, {
+  timestamps: true,
 });
 
 export const User = mongoose.model("User", userSchema);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CreateSolarUnitDto, UpdateSolarUnitDto } from "../domain/dtos/solar-unit";
+import { AssignSolarUnitDto, CreateSolarUnitDto, UpdateSolarUnitDto } from "../domain/dtos/solar-unit";
 import { SolarUnit } from "../infrastructure/entities/SolarUnit";
 import { NextFunction, Request, Response } from "express";
 import { NotFoundError, ValidationError } from "../domain/errors/errors";
@@ -12,7 +12,7 @@ export const getAllSolarUnits = async (
   next: NextFunction
 ) => {
   try {
-    const solarUnits = await SolarUnit.find();
+    const solarUnits = await SolarUnit.find().populate("userId", "firstName lastName email");
     res.status(200).json(solarUnits);
   } catch (error) {
     next(error);
@@ -39,12 +39,25 @@ export const createSolarUnit = async (
   try {
     const data: z.infer<typeof CreateSolarUnitDto> = req.body;
 
-    const newSolarUnit = {
+    const newSolarUnit: Record<string, any> = {
       serialNumber: data.serialNumber,
       installationDate: new Date(data.installationDate),
       capacity: data.capacity,
       status: data.status,
     };
+
+    if (data.userId) {
+      const user = await User.findById(data.userId);
+      if (!user) {
+        throw new NotFoundError("User not found");
+      }
+      // Check if user already has a solar unit assigned
+      const existingUnit = await SolarUnit.findOne({ userId: data.userId });
+      if (existingUnit) {
+        throw new ValidationError("This user already has a solar unit assigned");
+      }
+      newSolarUnit.userId = data.userId;
+    }
 
     const createdSolarUnit = await SolarUnit.create(newSolarUnit);
     res.status(201).json(createdSolarUnit);
@@ -60,7 +73,7 @@ export const getSolarUnitById = async (
 ) => {
   try {
     const { id } = req.params;
-    const solarUnit = await SolarUnit.findById(id);
+    const solarUnit = await SolarUnit.findById(id).populate("userId", "firstName lastName email");
 
     if (!solarUnit) {
       throw new NotFoundError("Solar unit not found");
@@ -143,6 +156,100 @@ export const deleteSolarUnit = async (
 
     await SolarUnit.findByIdAndDelete(id);
     res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const assignSolarUnitValidator = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const result = AssignSolarUnitDto.safeParse(req.body);
+  if (!result.success) {
+    throw new ValidationError(result.error.message);
+  }
+  next();
+};
+
+export const assignSolarUnit = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    const solarUnit = await SolarUnit.findById(id);
+    if (!solarUnit) {
+      throw new NotFoundError("Solar unit not found");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    // Check if user already has a solar unit assigned
+    const existingUnit = await SolarUnit.findOne({ userId });
+    if (existingUnit && existingUnit._id.toString() !== id) {
+      throw new ValidationError("This user already has a solar unit assigned");
+    }
+
+    // Check if user is in a valid status for assignment
+    if (user.status !== "APPROVED" && user.status !== "ACTIVE") {
+      throw new ValidationError(`Cannot assign a solar unit to a user with status "${user.status}". User must be approved first.`);
+    }
+
+    const updatedSolarUnit = await SolarUnit.findByIdAndUpdate(
+      id,
+      { userId },
+      { new: true }
+    ).populate("userId", "firstName lastName email");
+
+    // Update user status to ACTIVE
+    user.status = "ACTIVE";
+    user.statusUpdatedAt = new Date();
+    await user.save();
+
+    res.status(200).json(updatedSolarUnit);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const unassignSolarUnit = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const solarUnit = await SolarUnit.findById(id);
+    if (!solarUnit) {
+      throw new NotFoundError("Solar unit not found");
+    }
+
+    // If there was a user, set them back to APPROVED
+    if (solarUnit.userId) {
+      const user = await User.findById(solarUnit.userId);
+      if (user && user.status === "ACTIVE") {
+        user.status = "APPROVED";
+        user.statusUpdatedAt = new Date();
+        await user.save();
+      }
+    }
+
+    const updatedSolarUnit = await SolarUnit.findByIdAndUpdate(
+      id,
+      { $unset: { userId: 1 } },
+      { new: true }
+    );
+
+    res.status(200).json(updatedSolarUnit);
   } catch (error) {
     next(error);
   }
