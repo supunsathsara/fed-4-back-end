@@ -10,6 +10,7 @@ import {
   assignSolarUnit,
   assignSolarUnitValidator,
   unassignSolarUnit,
+  rotateDeviceApiKey,
 } from "../application/solar-unit";
 import { authenticationMiddleware } from "./middlewares/authentication-middleware";
 import { authorizationMiddleware } from "./middlewares/authorization-middleware";
@@ -30,5 +31,8 @@ solarUnitRouter
 solarUnitRouter
   .route("/:id/unassign")
   .patch(authenticationMiddleware, authorizationMiddleware, unassignSolarUnit);
+solarUnitRouter
+  .route("/:id/rotate-key")
+  .post(authenticationMiddleware, authorizationMiddleware, rotateDeviceApiKey);
 
 export default solarUnitRouter;

@@ -6,6 +6,7 @@ import { NotFoundError, ValidationError } from "../domain/errors/errors";
 import { User } from "../infrastructure/entities/User";
 import { getAuth } from "@clerk/express";
 import { createAuditLog, resolvePerformerId } from "./audit-log";
+import { syncUnitCreated, syncUnitStatusUpdated, syncUnitDeleted, syncRotateApiKey } from "../infrastructure/data-api-sync";
 
 export const getAllSolarUnits = async (
   req: Request,
@@ -62,6 +63,14 @@ export const createSolarUnit = async (
 
     const createdSolarUnit = await SolarUnit.create(newSolarUnit);
 
+    // Sync to Data API so the cron starts generating data for this unit
+    // Await so we can capture the device API key to return to the admin
+    const syncResult = await syncUnitCreated({
+      serialNumber: data.serialNumber,
+      name: `Solar Unit ${data.serialNumber}`,
+      capacity: data.capacity,
+    });
+
     const performerId = await resolvePerformerId(req);
     await createAuditLog({
       action: "SOLAR_UNIT_CREATED",
@@ -76,7 +85,11 @@ export const createSolarUnit = async (
       },
     });
 
-    res.status(201).json(createdSolarUnit);
+    // Return the unit data along with the one-time device API key
+    res.status(201).json({
+      ...createdSolarUnit.toObject(),
+      deviceApiKey: syncResult.apiKey || null,
+    });
   } catch (error) {
     next(error);
   }
@@ -154,6 +167,11 @@ export const updateSolarUnit = async (
     userId,
   });
 
+  // If status changed, sync to Data API
+  if (status && status !== solarUnit.status) {
+    syncUnitStatusUpdated(serialNumber || solarUnit.serialNumber, status);
+  }
+
   const performerId = await resolvePerformerId(req);
   await createAuditLog({
     action: "SOLAR_UNIT_UPDATED",
@@ -180,6 +198,9 @@ export const deleteSolarUnit = async (
     }
 
     await SolarUnit.findByIdAndDelete(id);
+
+    // Mark as OFFLINE in Data API (preserves historical data)
+    syncUnitDeleted(solarUnit.serialNumber);
 
     const performerId = await resolvePerformerId(req);
     await createAuditLog({
@@ -311,6 +332,56 @@ export const unassignSolarUnit = async (
     });
 
     res.status(200).json(updatedSolarUnit);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /solar-units/:id/rotate-key
+ * Rotate the IoT device API key for a solar unit.
+ * Proxies to the Data API's rotate-key endpoint.
+ * Returns the new key once — admin must flash it to the device.
+ */
+export const rotateDeviceApiKey = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const solarUnit = await SolarUnit.findById(id);
+
+    if (!solarUnit) {
+      throw new NotFoundError("Solar unit not found");
+    }
+
+    const result = await syncRotateApiKey(solarUnit.serialNumber);
+
+    if (!result.apiKey) {
+      return res.status(502).json({
+        error: "SYNC_FAILED",
+        message: "Failed to rotate API key in the Data API. The unit may not be registered yet.",
+      });
+    }
+
+    const performerId = await resolvePerformerId(req);
+    await createAuditLog({
+      action: "SOLAR_UNIT_UPDATED",
+      performedBy: performerId,
+      targetType: "SolarUnit",
+      targetId: solarUnit._id,
+      details: {
+        serialNumber: solarUnit.serialNumber,
+        action: "API_KEY_ROTATED",
+      },
+    });
+
+    res.status(200).json({
+      serialNumber: solarUnit.serialNumber,
+      deviceApiKey: result.apiKey,
+      message: "API key rotated successfully. Flash this key to the device firmware.",
+    });
   } catch (error) {
     next(error);
   }
